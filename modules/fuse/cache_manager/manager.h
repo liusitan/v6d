@@ -35,7 +35,6 @@ struct KeyValue {
   const KeyType key;
   ValType value;
   KeyValue(KeyType k, ValType v) : key(k), value(v) { ; }
-  KeyValue(const KeyValue<K, V>& kv) : key(kv.key), value(kv.value) { ; }
 };
 
 template <typename KeyValue>

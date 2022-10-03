@@ -18,11 +18,18 @@
 
 import logging
 
+import matplotlib.pyplot as plt
 import pytest
 
 import vineyard
 
-logging.basicConfig(level=logging.NOTSET)
+logging.basicConfig(level=logging.CRITICAL)
+
+
+def pytest_configure():
+    logger = logging.getLogger('matplotlib')
+    logger.disabled = True
+    plt.set_loglevel("error")
 
 
 def pytest_addoption(parser):
@@ -50,8 +57,19 @@ def pytest_addoption(parser):
         '--vineyard-fuse-process-pid',
         action='store',
         default=None,
-        help='fusermount directory',
+        help='fuse process id',
     )
+    parser.addoption(
+        '--vineyard-fuse-max-cache-size',
+        action='store',
+        default=None,
+        help='fuse max cache size managed by cache manager',
+    )
+
+
+@pytest.fixture(scope='session')
+def vineyard_fuse_max_cache_size(request):
+    return request.config.option.vineyard_fuse_max_cache_size
 
 
 @pytest.fixture(scope='session')

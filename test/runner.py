@@ -18,7 +18,7 @@ if 'NON_RANDOM_IPC_SOCKET' in os.environ:
 else:
     VINEYARD_CI_IPC_SOCKET = '/tmp/vineyard.ci.%s.sock' % time.time()
 
-
+MAX_FUSE_CACHE_SIZE = 30000  # bytes
 VINEYARD_FUSE_MOUNT_DIR = '/tmp/vineyard_fuse.%s' % time.time()
 find_executable_generic = None
 start_program_generic = None
@@ -99,14 +99,16 @@ def start_fuse():
     with contextlib.ExitStack() as stack:
         vfm = find_executable("vineyard-fusermount")
         os.mkdir(VINEYARD_FUSE_MOUNT_DIR)
-
+        os.environ["GLOG_logtostderr"] = "1"
+        os.environ["GLOG_minloglevel"] = "0"
         proc = start_program(
             vfm,
             '-f',
             '-s',
             '--vineyard-socket=%s' % VINEYARD_CI_IPC_SOCKET,
-            '--max-cache-size=%d' % 5000,
+            '--max-cache-size=%d' % MAX_FUSE_CACHE_SIZE,
             VINEYARD_FUSE_MOUNT_DIR,
+            verbose=True,
         )
         yield stack.enter_context(proc)
 
@@ -478,6 +480,7 @@ def run_fuse_test(etcd_endpoints):
                 '--vineyard-endpoint=localhost:%s' % rpc_socket_port,
                 '--vineyard-fuse-mount-dir=%s' % VINEYARD_FUSE_MOUNT_DIR,
                 '--vineyard-fuse-process-pid=%d' % proc.pid,
+                '--vineyard-fuse-max-cache-size=%d' % MAX_FUSE_CACHE_SIZE,
             ],
             cwd=os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'),
         )

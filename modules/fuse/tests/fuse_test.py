@@ -16,6 +16,7 @@
 # limitations under the License.
 #
 import os
+import time
 from enum import Enum
 from logging import fatal
 
@@ -23,6 +24,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 
+import matplotlib.pyplot as plt
 import psutil
 
 
@@ -121,70 +123,108 @@ def compare_two_string_array(arr_str_1, arr_str_2):
     return True
 
 
-def test_fuse_int64_array(vineyard_client, vineyard_fuse_mount_dir):
-    data = generate_array(Type.INT64)
-    id = vineyard_client.put(data)
-    extracted_data = read_data_from_fuse(
-        str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
-    )
+# def test_fuse_int64_array(vineyard_client, vineyard_fuse_mount_dir):
+#     data = generate_array(Type.INT64)
+#     id = vineyard_client.put(data)
+#     extracted_data = read_data_from_fuse(
+#         str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
+#     )
 
-    extracted_data = extracted_data.column("a").chunk(0)
-    assert_array(data, extracted_data)
-
-
-def test_fuse_double_array(vineyard_client, vineyard_fuse_mount_dir):
-    data = generate_array(Type.DOUBLE)
-    id = vineyard_client.put(data)
-    extracted_data = read_data_from_fuse(
-        str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
-    )
-
-    extracted_data = extracted_data.column("a").chunk(0)
-    assert_array(data, extracted_data)
+#     extracted_data = extracted_data.column("a").chunk(0)
+#     assert_array(data, extracted_data)
 
 
-def test_fuse_string_array(vineyard_client, vineyard_fuse_mount_dir):
-    data = generate_array(Type.STRING)
-    id = vineyard_client.put(data)
-    extracted_data = read_data_from_fuse(
-        str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
-    )
-    extracted_data = extracted_data.column("a").chunk(0)
-    assert compare_two_string_array(data, extracted_data), "string array not the same"
+# def test_fuse_double_array(vineyard_client, vineyard_fuse_mount_dir):
+#     data = generate_array(Type.DOUBLE)
+#     id = vineyard_client.put(data)
+#     extracted_data = read_data_from_fuse(
+#         str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
+#     )
+
+#     extracted_data = extracted_data.column("a").chunk(0)
+#     assert_array(data, extracted_data)
 
 
-def test_fuse_df(vineyard_client, vineyard_fuse_mount_dir):
-    data = generate_dataframe()
+# def test_fuse_string_array(vineyard_client, vineyard_fuse_mount_dir):
+#     data = generate_array(Type.STRING)
+#     id = vineyard_client.put(data)
+#     extracted_data = read_data_from_fuse(
+#         str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
+#     )
+#     extracted_data = extracted_data.column("a").chunk(0)
+#     assert compare_two_string_array(data, extracted_data), "string array not the same"
 
-    id = vineyard_client.put(data)
-    extracted_data = read_data_from_fuse(
-        str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
-    )
-    assert_dataframe(data, extracted_data)
+
+# def test_fuse_df(vineyard_client, vineyard_fuse_mount_dir):
+#     data = generate_dataframe()
+
+#     id = vineyard_client.put(data)
+#     extracted_data = read_data_from_fuse(
+#         str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir
+#     )
+#     assert_dataframe(data, extracted_data)
 
 
-def test_cache_manager(
-    vineyard_client, vineyard_fuse_mount_dir, vineyard_fuse_process_pid
+def test_cache_manager_memory_usage_generation(
+    vineyard_client,
+    vineyard_fuse_mount_dir,
+    vineyard_fuse_process_pid,
+    vineyard_fuse_max_cache_size,
 ):
     data = generate_dataframe((20, 4))
     pid = int(vineyard_fuse_process_pid)
     print("process_id", pid)
+    stats = []
+    data_size = 0
 
-    for _ in range(1, 20):
-        print("put 171", _)
-
-        id = vineyard_client.put(data)
-        _ = read_data_from_fuse(str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir)
-
-    memory_usage_before = psutil.Process(pid).memory_info().rss / 1024**2
-    data = generate_dataframe((20, 4))
-
-    for _ in range(1, 20):
-        print("put 182", _)
+    for _ in range(1, 80):
 
         id = vineyard_client.put(data)
-        _ = read_data_from_fuse(str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir)
+        rdata = read_data_from_fuse(str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir)
+        data_size += rdata.nbytes
 
-    memory_usage_after = psutil.Process(pid).memory_info().rss / 1024**2
-    if abs((memory_usage_before) - (memory_usage_after)) > 0.0001:
-        fatal("memory usage changed")
+        stats.append([data_size, psutil.Process(pid).memory_info().rss])
+    stats = np.array(stats)
+    plt.style.use('seaborn')
+    fig, ax = plt.subplots()
+    ax.plot(stats[:, 0], stats[:, 1])
+
+    ax.plot(
+        [int(vineyard_fuse_max_cache_size), int(vineyard_fuse_max_cache_size)],
+        [min(stats[:, 1]), max(stats[:, 1])],
+        color='r',
+    )
+    ax.set_xlabel("mount of data cached or caching")
+    ax.set_ylabel("memory usage")
+    ax.ticklabel_format(style='plain')
+    # print("!!!!!!!!!",os.getcwd(),vineyard_fuse_max_cache_size)
+    fig.savefig(os.path.join(os.getcwd(), 'memory_measurement.png'))
+
+
+# def test_cache_manager(
+#     vineyard_client, vineyard_fuse_mount_dir, vineyard_fuse_process_pid
+# ):
+#     data = generate_dataframe((20, 4))
+#     pid = int(vineyard_fuse_process_pid)
+#     print("process_id", pid)
+#     stats = []
+#     for _ in range(1, 100):
+
+#         id = vineyard_client.put(data)
+#         _ = read_data_from_fuse(str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir)
+#         stats.append(psutil.Process(pid).memory_info().rss)
+
+#     memory_usage_before = psutil.Process(pid).memory_info().rss / 1024**2
+#     data = generate_dataframe((20, 4))
+
+#     for _ in range(1, 300):
+
+#         id = vineyard_client.put(data)
+#         _ = read_data_from_fuse(str(id)[11:28] + ".arrow", vineyard_fuse_mount_dir)
+#         stats.append(psutil.Process(pid).memory_info().rss)
+
+#     memory_usage_after = psutil.Process(pid).memory_info().rss / 1024**2
+#     if abs((memory_usage_before) - (memory_usage_after)) > 0.0001:
+#         fatal("memory usage changed")
+#     for s in stats:
+#         print(s)
